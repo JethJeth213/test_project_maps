@@ -19,10 +19,11 @@ function Map() {
   };
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/locations")
-      .then((res) => res.json())
-      .then((data) => setLocations(data));
-  }, []);
+  fetch(`${import.meta.env.VITE_API_URL}/locations`)
+    .then(res => res.json())
+    .then(data => setLocations(data))
+    .catch(err => console.error(err));
+}, []);
 
   if (!isLoaded) return <p>Loading map...</p>;
 
