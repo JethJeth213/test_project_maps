@@ -1,43 +1,37 @@
-import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
-import { useEffect, useState, useMemo } from "react";
+import { GoogleMap, useJsApiLoader, MarkerF } from "@react-google-maps/api";
+import { useEffect, useState } from "react";
 
 const containerStyle = {
   width: "100%",
   height: "500px",
 };
 
+const center = {
+  lat: 10.3157,
+  lng: 123.8854,
+};
+
 function Map() {
-  const { isLoaded, loadError } = useJsApiLoader({
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   });
 
   const [locations, setLocations] = useState([]);
 
-  // Memoize center to prevent unnecessary re-renders
-  const center = useMemo(() => ({
-    lat: 10.3157,
-    lng: 123.8854,
-  }), []);
-
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL;
-    // Ensure no double slashes if VITE_API_URL ends in /
-    const cleanUrl = apiUrl.endsWith('/') ? `${apiUrl}locations` : `${apiUrl}/locations`;
-
-    fetch(cleanUrl)
-      .then(res => {
-        if (!res.ok) throw new Error("Network response was not ok");
-        return res.json();
-      })
+    const fetchUrl = `${import.meta.env.VITE_API_URL.replace(/\/$/, "")}/locations`;
+    
+    fetch(fetchUrl)
+      .then(res => res.json())
       .then(data => {
-        console.log("Fetched locations:", data);
+        console.log("Raw Backend Data:", data);
         setLocations(Array.isArray(data) ? data : []);
       })
-      .catch(err => console.error("Fetch error:", err));
+      .catch(err => console.error("Vercel Fetch Error:", err));
   }, []);
 
-  if (loadError) return <div>Error loading maps</div>;
-  if (!isLoaded) return <p>Loading map...</p>;
+  if (!isLoaded) return <div>Loading Map...</div>;
 
   return (
     <GoogleMap
@@ -45,12 +39,19 @@ function Map() {
       center={center}
       zoom={13}
     >
+      {/* 1. TEST MARKER: If this shows up, your API is working fine */}
+      <MarkerF 
+        position={center} 
+        label="TEST"
+      />
+
+      {/* 2. DYNAMIC MARKERS: Using MarkerF and Float conversion */}
       {locations.map((loc) => (
-        <Marker
-          key={loc.id || `${loc.lat}-${loc.lng}`}
+        <MarkerF
+          key={loc.id || Math.random()}
           position={{ 
-            lat: Number(loc.lat), 
-            lng: Number(loc.lng) 
+            lat: parseFloat(loc.lat), 
+            lng: parseFloat(loc.lng) 
           }}
         />
       ))}
