@@ -1,58 +1,63 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import mysql.connector
+from supabase import create_client
+import os
 
 app = FastAPI()
 
-def get_db():
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        port=3307,
-        password="",
-        database="map_project",
-    )
+# Supabase setup
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
 
+supabase = create_client(url, key)
+
+# Model
 class Location(BaseModel):
     name: str
     lat: float
     lng: float
 
+
+# CREATE
 @app.post("/locations")
 def add_location(location: Location):
-    db = get_db()
-    cursor = db.cursor()
+    data = supabase.table("locations").insert({
+        "name": location.name,
+        "lat": location.lat,
+        "lng": location.lng
+    }).execute()
 
-    sql = "INSERT INTO locations (name, lat, lng) VALUES (%s, %s, %s)"
-    cursor.execute(sql, (location.name, location.lat, location.lng))
+    return {"message": "Location added", "data": data.data}
 
-    db.commit()
-    db.close()
 
-    return {"message" : "Location added successfully"}
+# READ
+@app.get("/locations")
+def get_locations():
+    data = supabase.table("locations").select("*").execute()
+    return data.data
+
+
+# UPDATE
+class UpdateLocation(BaseModel):
+    id: int
+    name: str
+    lat: float
+    lng: float
 
 @app.put("/locations")
-def add_location(location: Location):
-    db = get_db()
-    cursor = db.cursor()
+def update_location(location: UpdateLocation):
+    data = supabase.table("locations").update({
+        "name": location.name,
+        "lat": location.lat,
+        "lng": location.lng
+    }).eq("id", location.id).execute()
 
-    sql = "UPDATE locations SET name = %s, lat = %s, lng = %s WHERE id = %s"
-    cursor.execute(sql, (location.name, location.lat, location.lng))
+    return {"message": "Location updated", "data": data.data}
 
-    db.commit()
-    db.close()
 
-    return {"message" : " Location updated successfully"}
-
+# DELETE
 @app.delete("/locations/{location_id}")
-def delete_location(id: int):
-    db = get_db()
-    cursor = db.cursor()
+def delete_location(location_id: int):
+    data = supabase.table("locations").delete().eq("id", location_id).execute()
 
-    sql = "DELETE FROM locations WHERE id = %s"
-    cursor.execute(sql, (id,))
-
-    db.commit()
-    db.close()
-
-    return {"message" : "Location deleted successfully"}
+    return {"message": "Location deleted", "data": data.data}
