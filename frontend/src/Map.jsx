@@ -1,8 +1,8 @@
-import { GoogleMap, useJsApiLoader, MarkerF, DirectionsService, DirectionsRenderer, Autocomplete } from "@react-google-maps/api";
-import { useState, useCallback, useRef } from "react";
+import { GoogleMap, useJsApiLoader, DirectionsService, DirectionsRenderer, Autocomplete } from "@react-google-maps/api";
+import { useState, useCallback, useRef, useEffect } from "react";
 
-const containerStyle = { width: "100%", height: "600px" }; // Increased height for better view
-const center = { lat: 10.3157, lng: 123.8854 }; // Centered slightly differently for better default view
+const containerStyle = { width: "100%", height: "600px" };
+const center = { lat: 10.3157, lng: 123.8854 };
 const libraries = ["places"];
 
 function Map() {
@@ -12,75 +12,86 @@ function Map() {
     libraries,
   });
 
+  // State for the raw input (changes every keystroke)
+  const [originInput, setOriginInput] = useState("");
+  const [destInput, setDestInput] = useState("");
+  
+  // State for the "Debounced" values (only changes after pause)
+  const [debouncedOrigin, setDebouncedOrigin] = useState("");
+  const [debouncedDest, setDebouncedDest] = useState("");
+
   const [response, setResponse] = useState(null);
-  const [routeIndex, setRouteIndex] = useState(0); // Tracks selected route
-  
-  const originRef = useRef(null);
-  const destinationRef = useRef(null);
-  
-  const [origin, setOrigin] = useState("");
-  const [destination, setDestination] = useState("");
+  const [routeIndex, setRouteIndex] = useState(0);
+  const [isTyping, setIsTyping] = useState(false);
+
+  // 1. DEBOUNCE LOGIC
+  useEffect(() => {
+    if (!originInput && !destInput) return;
+
+    setIsTyping(true);
+    // Set a timer (e.g., 5000ms = 5 seconds)
+    const delayDebounceFn = setTimeout(() => {
+      setDebouncedOrigin(originInput);
+      setDebouncedDest(destInput);
+      setResponse(null); // Clear old routes to trigger new fetch
+      setIsTyping(false);
+    }, 5000); 
+
+    // Cleanup: This cancels the timer if the user types again before it finishes
+    return () => clearTimeout(delayDebounceFn);
+  }, [originInput, destInput]);
 
   const directionsCallback = useCallback((res) => {
     if (res !== null && res.status === 'OK') {
       setResponse(res);
-      // Ensure the default selected index is valid for the new response
       setRouteIndex(0);
-    } else {
-      console.error("Directions request failed:", res?.status);
     }
   }, []);
-
-  const handleSearch = () => {
-    const originValue = originRef.current.value;
-    const destValue = destinationRef.current.value;
-
-    if (originValue && destValue) {
-      setOrigin(originValue);
-      setDestination(destValue);
-      setResponse(null); // Clear to trigger a fresh DirectionsService request
-    }
-  };
 
   if (!isLoaded) return <div>Loading Map...</div>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "15px", padding: "10px" }}>
+      
       {/* SEARCH BAR */}
       <div style={{ padding: "15px", background: "#fff", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", borderRadius: "8px" }}>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
           
-          <Autocomplete style={{ flex: 1 }}>
+          <Autocomplete onPlaceChanged={() => {}}>
             <input
               type="text"
-              placeholder="Origin (e.g., Ayala Center Cebu)"
-              ref={originRef}
-              style={{ width: "100%", padding: "12px", borderRadius: "4px", border: "1px solid #ccc" }}
+              placeholder="Origin..."
+              value={originInput}
+              onChange={(e) => setOriginInput(e.target.value)}
+              style={{ width: "300px", padding: "12px", borderRadius: "4px", border: "1px solid #ccc" }}
             />
           </Autocomplete>
 
-          <Autocomplete style={{ flex: 1 }}>
+          <Autocomplete onPlaceChanged={() => {}}>
             <input
               type="text"
-              placeholder="Destination (e.g., SM Seaside City)"
-              ref={destinationRef}
-              style={{ width: "100%", padding: "12px", borderRadius: "4px", border: "1px solid #ccc" }}
+              placeholder="Destination..."
+              value={destInput}
+              onChange={(e) => setDestInput(e.target.value)}
+              style={{ width: "300px", padding: "12px", borderRadius: "4px", border: "1px solid #ccc" }}
             />
           </Autocomplete>
 
-          <button onClick={handleSearch} style={{ padding: "12px 24px", background: "#1a73e8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>
-            Find Routes
-          </button>
+          {isTyping && (
+            <span style={{ color: "#666", fontSize: "0.9em", fontStyle: "italic" }}>
+              Waiting for you to finish typing... (5s delay)
+            </span>
+          )}
         </div>
       </div>
 
       <GoogleMap mapContainerStyle={containerStyle} center={center} zoom={13}>
-        {/* DIRECTIONS LOGIC: Triggered when origin/destination change */}
-        {origin && destination && !response && (
+        {/* Only call API when we have debounced values and no active response */}
+        {debouncedOrigin && debouncedDest && !response && (
           <DirectionsService
             options={{
-              origin: origin,
-              destination: destination,
+              origin: debouncedOrigin,
+              destination: debouncedDest,
               travelMode: "DRIVING",
               provideRouteAlternatives: true,
             }}
@@ -90,106 +101,54 @@ function Map() {
 
         {response && (
           <>
-            {/* 1. Unselected (Background) Routes - Yellow */}
-            <DirectionsRenderer
-              options={{
-                directions: response,
-                routeIndex: -1, // Setting index to -1 normally shows all, but we need precise control
-                suppressMarkers: true, // Do not show A/B markers for background routes
-                polylineOptions: {
-                  strokeColor: "#F4B400", // Google Yellow
-                  strokeOpacity: 0.6,
-                  strokeWeight: 5,
-                  zIndex: 1, // Lower priority
-                },
-              }}
-              // Need to manually handle showing alternatives, 
-              // as setting routeIndex alone doesn't change color properly for background
-              {... (routeIndex !== -1 ? { options: {
-                    directions: response,
-                    // Filter routes to exclude the active one and show them yellow
-                    routeIndex: -1,
-                    suppressMarkers: true,
-                    polylineOptions: {
-                        strokeColor: "#F4B400", 
-                        strokeOpacity: 0.5,
-                        strokeWeight: 4,
-                        zIndex: 1, 
-                    }
-                }} : {})}
-            />
-
-            {/* Alternative strategy for Background routes (more robust):
-               Map through all routes EXCEPT the selected index and render them.
-            */}
+            {/* Render Yellow (Unselected) Routes */}
             {response.routes.map((route, index) => {
-                if (index === routeIndex) return null; // Skip selected route
+                if (index === routeIndex) return null;
                 return (
                     <DirectionsRenderer
-                        key={`bg-route-${index}`}
+                        key={index}
                         options={{
                             directions: response,
-                            routeIndex: index, // Render this specific background route
-                            suppressMarkers: true, // No duplicate markers
-                            polylineOptions: {
-                                strokeColor: "#FBC02D", // Darker Yellow/Gold for visibility
-                                strokeOpacity: 0.6,
-                                strokeWeight: 5,
-                                zIndex: 5, // Above standard map items, below active route
-                            },
+                            routeIndex: index,
+                            suppressMarkers: true,
+                            polylineOptions: { strokeColor: "#FBC02D", strokeOpacity: 0.5, strokeWeight: 5, zIndex: 5 }
                         }}
                     />
                 );
             })}
 
-            {/* 2. Selected (Active) Route - Blue */}
+            {/* Render Blue (Selected) Route */}
             <DirectionsRenderer
               options={{
                 directions: response,
-                routeIndex: routeIndex, // Shows the user-selected route
-                suppressMarkers: false, // Show standard A/B markers
-                polylineOptions: {
-                  strokeColor: "#1976D2", // Google Blue
-                  strokeOpacity: 1.0,
-                  strokeWeight: 6,
-                  zIndex: 10, // Highest priority to be on top
-                },
+                routeIndex: routeIndex,
+                polylineOptions: { strokeColor: "#1976D2", strokeOpacity: 1, strokeWeight: 6, zIndex: 10 }
               }}
             />
           </>
         )}
       </GoogleMap>
 
-      {/* ROUTE SELECTION PANEL & ETA */}
-      {response && (
-        <div style={{ padding: "10px", background: "#f9f9f9", borderRadius: "8px", border: "1px solid #eee" }}>
-          <h3 style={{ marginTop: 0 }}>Available Routes</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+      {/* ROUTE LIST */}
+      {response && !isTyping && (
+        <div style={{ padding: "10px", background: "#f9f9f9", borderRadius: "8px" }}>
+          <h3>Available Routes</h3>
+          <div style={{ display: "flex", gap: "10px" }}>
             {response.routes.map((route, index) => (
               <div 
                 key={index}
                 onClick={() => setRouteIndex(index)}
                 style={{
-                  flex: "1 1 calc(33.33% - 10px)", // 3 columns
-                  minWidth: "250px",
                   padding: "15px",
                   border: "2px solid",
                   borderColor: routeIndex === index ? "#1976D2" : "#FBC02D",
                   borderRadius: "6px",
                   cursor: "pointer",
-                  backgroundColor: routeIndex === index ? "#E3F2FD" : "#FFFDE7",
-                  transition: "all 0.2s ease"
+                  backgroundColor: routeIndex === index ? "#E3F2FD" : "#FFFDE7"
                 }}
               >
-                <div style={{ fontWeight: "bold", fontSize: "1.1em", color: routeIndex === index ? "#1565C0" : "#F57F17" }}>
-                  Route {index + 1}: {route.summary || `Via ${route.legs[0].summary}`}
-                </div>
-                <div style={{ color: "#333", marginTop: "5px" }}>
-                  Distance: <strong>{route.legs[0].distance.text}</strong>
-                </div>
-                <div style={{ color: routeIndex === index ? "#1976D2" : "#F57F17", fontSize: "1.2em", fontWeight: "bold", marginTop: "3px" }}>
-                  ETA: {route.legs[0].duration.text}
-                </div>
+                <strong>Route {index + 1}</strong>
+                <div>ETA: {route.legs[0].duration.text}</div>
               </div>
             ))}
           </div>
