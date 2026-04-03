@@ -1,8 +1,14 @@
 import { GoogleMap, useJsApiLoader, DirectionsService, DirectionsRenderer, Autocomplete } from "@react-google-maps/api";
 import { useState, useCallback, useRef, useEffect } from "react";
 
-const containerStyle = { width: "100%", height: "600px", borderRadius: "12px" };
-const center = { lat: 10.3157, lng: 123.8854 }; // Default to Cebu City
+// Responsive container: 100% width, height adjusts based on screen
+const containerStyle = { 
+  width: "100%", 
+  height: "50vh", // Use viewport height for better mobile feel
+  minHeight: "350px",
+  borderRadius: "12px" 
+};
+const center = { lat: 10.3157, lng: 123.8854 };
 const libraries = ["places"];
 
 function Map() {
@@ -12,28 +18,28 @@ function Map() {
     libraries,
   });
 
-  // State for the text visible in the input boxes
   const [originInput, setOriginInput] = useState("");
   const [destInput, setDestInput] = useState("");
-  
-  // State that actually triggers the Directions API call
   const [requestOrigin, setRequestOrigin] = useState("");
   const [requestDest, setRequestDest] = useState("");
-
   const [response, setResponse] = useState(null);
   const [routeIndex, setRouteIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Refs to access the Google Autocomplete instance methods
   const originAutocompleteRef = useRef(null);
   const destAutocompleteRef = useRef(null);
 
-  // 1. EFFICIENT DEBOUNCE
-  // Instead of 5s, we use 1s. It waits for the user to stop typing 
-  // before attempting a route calculation to save on API costs.
+  // Detect mobile for dynamic styling
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   useEffect(() => {
     if (!originInput || !destInput) return;
-
     const delayDebounceFn = setTimeout(() => {
       if (originInput !== requestOrigin || destInput !== requestDest) {
         setErrorMessage("");
@@ -42,20 +48,14 @@ function Map() {
         setResponse(null);
       }
     }, 1000); 
-
     return () => clearTimeout(delayDebounceFn);
   }, [originInput, destInput, requestOrigin, requestDest]);
 
-  // 2. IMMEDIATE SYNC ON SELECTION
-  // When a user clicks a suggestion, we bypass the debounce and trigger immediately.
   const onPlaceChanged = (type) => {
     const autocomplete = type === 'origin' ? originAutocompleteRef.current : destAutocompleteRef.current;
     if (autocomplete) {
       const place = autocomplete.getPlace();
-      
-      // Crucial: Use formatted_address to avoid the "NOT_FOUND" error
       const address = place.formatted_address || place.name;
-      
       if (type === 'origin') {
         setOriginInput(address);
         setRequestOrigin(address);
@@ -68,31 +68,42 @@ function Map() {
     }
   };
 
-  // 3. ROBUST CALLBACK
-  // We now check the 'status' argument to handle cases where roads don't connect.
   const directionsCallback = useCallback((res, status) => {
     if (status === 'OK' && res !== null) {
       setResponse(res);
       setRouteIndex(0);
       setErrorMessage("");
     } else if (status === 'ZERO_RESULTS') {
-      setErrorMessage("No driving routes found between these points.");
-      setResponse(null);
-    } else if (status === 'NOT_FOUND') {
-      setErrorMessage("One of the locations could not be identified.");
+      setErrorMessage("No driving routes found.");
       setResponse(null);
     }
   }, []);
 
   if (loadError) return <div>Error loading maps</div>;
-  if (!isLoaded) return <div>Loading Engine Room...</div>;
+  if (!isLoaded) return <div>Loading...</div>;
 
   return (
-    <div style={{ fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', maxWidth: "1200px", margin: "0 auto", padding: "20px" }}>
+    <div style={{ 
+      fontFamily: 'Segoe UI, sans-serif', 
+      maxWidth: "1200px", 
+      margin: "0 auto", 
+      padding: isMobile ? "10px" : "20px" 
+    }}>
       
       {/* SEARCH PANEL */}
-      <div style={{ marginBottom: "20px", padding: "20px", background: "#fff", boxShadow: "0 4px 20px rgba(0,0,0,0.08)", borderRadius: "12px" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "15px", alignItems: "center" }}>
+      <div style={{ 
+        marginBottom: "15px", 
+        padding: isMobile ? "15px" : "20px", 
+        background: "#fff", 
+        boxShadow: "0 4px 20px rgba(0,0,0,0.08)", 
+        borderRadius: "12px" 
+      }}>
+        <div style={{ 
+          display: "flex", 
+          flexDirection: isMobile ? "column" : "row", 
+          gap: "10px", 
+          alignItems: "stretch" 
+        }}>
           
           <Autocomplete 
             onLoad={(ref) => (originAutocompleteRef.current = ref)} 
@@ -100,14 +111,14 @@ function Map() {
           >
             <input
               type="text"
-              placeholder="Starting point..."
+              placeholder="Origin..."
               value={originInput}
               onChange={(e) => setOriginInput(e.target.value)}
-              style={inputStyle}
+              style={{ ...inputStyle, width: isMobile ? "100%" : "300px" }}
             />
           </Autocomplete>
 
-          <div style={{ fontSize: "20px", color: "#ccc" }}>→</div>
+          {!isMobile && <div style={{ alignSelf: "center", color: "#ccc" }}>→</div>}
 
           <Autocomplete 
             onLoad={(ref) => (destAutocompleteRef.current = ref)} 
@@ -118,29 +129,39 @@ function Map() {
               placeholder="Destination..."
               value={destInput}
               onChange={(e) => setDestInput(e.target.value)}
-              style={inputStyle}
+              style={{ ...inputStyle, width: isMobile ? "100%" : "300px" }}
             />
           </Autocomplete>
 
-          {(originInput || destInput) && (
-            <button 
-              onClick={() => { 
-                setOriginInput(""); setDestInput(""); 
-                setRequestOrigin(""); setRequestDest("");
-                setResponse(null); setErrorMessage("");
-              }}
-              style={{ border: "none", background: "none", color: "#ef5350", cursor: "pointer", fontWeight: "600" }}
-            >
-              Clear
-            </button>
-          )}
+          <button 
+            onClick={() => { 
+              setOriginInput(""); setDestInput(""); 
+              setRequestOrigin(""); setRequestDest("");
+              setResponse(null); setErrorMessage("");
+            }}
+            style={{ 
+              padding: "10px",
+              border: "none", 
+              background: isMobile ? "#f5f5f5" : "none", 
+              color: "#ef5350", 
+              borderRadius: "8px",
+              cursor: "pointer", 
+              fontWeight: "600" 
+            }}
+          >
+            Clear
+          </button>
         </div>
-        {errorMessage && <div style={{ color: "#ef5350", marginTop: "10px", fontSize: "0.9em" }}>{errorMessage}</div>}
+        {errorMessage && <div style={{ color: "#ef5350", marginTop: "10px", fontSize: "0.85em" }}>{errorMessage}</div>}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: response ? "1fr 350px" : "1fr", gap: "20px" }}>
+      {/* MAIN CONTENT AREA */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: (response && !isMobile) ? "1fr 350px" : "1fr", 
+        gap: "15px" 
+      }}>
         
-        {/* MAP DISPLAY */}
         <GoogleMap mapContainerStyle={containerStyle} center={center} zoom={13}>
           {requestOrigin && requestDest && !response && !errorMessage && (
             <DirectionsService
@@ -155,50 +176,48 @@ function Map() {
           )}
 
           {response && (
-            <>
-              {response.routes.map((_, index) => (
-                <DirectionsRenderer
-                  key={index}
-                  options={{
-                    directions: response,
-                    routeIndex: index,
-                    suppressMarkers: index !== routeIndex, 
-                    polylineOptions: {
-                      strokeColor: index === routeIndex ? "#1976D2" : "#90A4AE",
-                      strokeOpacity: index === routeIndex ? 1 : 0.5,
-                      strokeWeight: index === routeIndex ? 6 : 4,
-                      zIndex: index === routeIndex ? 10 : 1
-                    }
-                  }}
-                />
-              ))}
-            </>
+            <DirectionsRenderer
+              options={{
+                directions: response,
+                routeIndex: routeIndex,
+                polylineOptions: {
+                  strokeColor: "#1976D2",
+                  strokeWeight: 6,
+                }
+              }}
+            />
           )}
         </GoogleMap>
 
-        {/* SIDEBAR: ROUTE OPTIONS */}
+        {/* ROUTE OPTIONS: Sidebar on Desktop, List on Mobile */}
         {response && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <h3 style={{ margin: "0 0 10px 0", color: "#333" }}>Available Routes</h3>
+          <div style={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            gap: "10px",
+            maxHeight: isMobile ? "none" : "500px",
+            overflowY: "auto",
+            padding: "5px"
+          }}>
+            <h3 style={{ margin: "5px 0", fontSize: "1.1em" }}>Routes</h3>
             {response.routes.map((route, index) => (
               <div 
                 key={index}
-                onClick={() => setRouteIndex(index)}
+                onClick={() => {
+                  setRouteIndex(index);
+                  if (isMobile) window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
                 style={{
-                  padding: "16px",
+                  padding: "12px",
                   border: "2px solid",
                   borderColor: routeIndex === index ? "#1976D2" : "#eee",
                   borderRadius: "10px",
                   cursor: "pointer",
-                  transition: "all 0.2s ease",
                   backgroundColor: routeIndex === index ? "#E3F2FD" : "#fff",
-                  boxShadow: routeIndex === index ? "0 4px 12px rgba(25, 118, 210, 0.15)" : "none"
                 }}
               >
-                <div style={{ fontWeight: "bold", fontSize: "1.05em", marginBottom: "4px" }}>
-                  {route.summary || "Main Route"}
-                </div>
-                <div style={{ color: "#666", display: "flex", justifyContent: "space-between", fontSize: "0.9em" }}>
+                <div style={{ fontWeight: "bold", fontSize: "0.95em" }}>{route.summary || `Route ${index + 1}`}</div>
+                <div style={{ color: "#666", fontSize: "0.85em", display: "flex", justifyContent: "space-between" }}>
                   <span>{route.legs[0].duration.text}</span>
                   <span>{route.legs[0].distance.text}</span>
                 </div>
@@ -212,13 +231,12 @@ function Map() {
 }
 
 const inputStyle = {
-  width: "320px",
-  padding: "14px 18px",
+  padding: "12px 15px",
   borderRadius: "8px",
   border: "1px solid #ddd",
-  fontSize: "15px",
+  fontSize: "16px", // 16px prevents iOS/Android from auto-zooming on focus
   outline: "none",
-  transition: "border-color 0.2s",
+  boxSizing: "border-box"
 };
 
 export default Map;
