@@ -1,102 +1,125 @@
-import { GoogleMap, useJsApiLoader, MarkerF, DirectionsService, DirectionsRenderer } from "@react-google-maps/api";
-import { useState, useCallback } from "react";
+import { GoogleMap, useJsApiLoader, MarkerF, DirectionsService, DirectionsRenderer, Autocomplete } from "@react-google-maps/api";
+import { useState, useCallback, useRef } from "react";
 
 const containerStyle = { width: "100%", height: "500px" };
 const center = { lat: 10.3002, lng: 123.8917 };
+// Define libraries outside to prevent unnecessary re-renders
+const libraries = ["places"];
 
 function Map() {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    // Add 'places' if you want to use Autocomplete later
-    libraries: ['places'] 
+    libraries,
   });
 
   const [response, setResponse] = useState(null);
+  const [routeIndex, setRouteIndex] = useState(0);
+  
+  // Refs to access the Autocomplete instances
+  const originRef = useRef(null);
+  const destinationRef = useRef(null);
+  
+  // State for the actual location strings
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
-  const [routeIndex, setRouteIndex] = useState(0);
 
-  // 1. Callback when DirectionsService returns data
   const directionsCallback = useCallback((res) => {
     if (res !== null && res.status === 'OK') {
       setResponse(res);
-    } else {
-      console.error("Directions Request Failed:", res);
     }
   }, []);
 
-  // 2. Trigger the search
   const handleSearch = () => {
-    if (origin !== "" && destination !== "") {
-      setResponse(null); // Reset before new search
+    // Get values from the autocomplete input fields
+    const originValue = originRef.current.value;
+    const destValue = destinationRef.current.value;
+
+    if (originValue && destValue) {
+      setOrigin(originValue);
+      setDestination(destValue);
+      setResponse(null); // Clear previous route to trigger new request
     }
   };
 
-  if (!isLoaded) return <div>Loading...</div>;
+  if (!isLoaded) return <div>Loading Map...</div>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      {/* INPUT UI */}
-      <div style={{ padding: "10px", background: "#f4f4f4", borderRadius: "8px" }}>
-        <input 
-          placeholder="From (e.g. Cebu City)" 
-          onChange={(e) => setOrigin(e.target.value)} 
-          style={{ marginRight: "10px", padding: "5px" }}
-        />
-        <input 
-          placeholder="To (e.g. Mandaue City)" 
-          onChange={(e) => setDestination(e.target.value)} 
-          style={{ marginRight: "10px", padding: "5px" }}
-        />
-        <button onClick={handleSearch} style={{ padding: "5px 15px", cursor: "pointer" }}>
-          Find Routes
-        </button>
+      {/* SEARCH BAR */}
+      <div style={{ padding: "15px", background: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.3)", borderRadius: "4px" }}>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+          
+          <Autocomplete>
+            <input
+              type="text"
+              placeholder="From (e.g. CTU Main)"
+              ref={originRef}
+              style={{ width: "250px", padding: "10px" }}
+            />
+          </Autocomplete>
+
+          <Autocomplete>
+            <input
+              type="text"
+              placeholder="To (e.g. Ayala Center)"
+              ref={destinationRef}
+              style={{ width: "250px", padding: "10px" }}
+            />
+          </Autocomplete>
+
+          <button onClick={handleSearch} style={{ padding: "10px 20px", background: "#4285F4", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>
+            Get Routes
+          </button>
+        </div>
       </div>
 
       <GoogleMap mapContainerStyle={containerStyle} center={center} zoom={13}>
-        {/* DIRECTIONS LOGIC */}
-        {origin !== "" && destination !== "" && response === null && (
+        {/* Only run DirectionsService when we have both locations and no response yet */}
+        {origin && destination && !response && (
           <DirectionsService
             options={{
               origin: origin,
               destination: destination,
               travelMode: "DRIVING",
-              provideRouteAlternatives: true, // This allows multiple routes
+              provideRouteAlternatives: true,
             }}
             callback={directionsCallback}
           />
         )}
 
-        {response !== null && (
+        {response && (
           <DirectionsRenderer
             options={{
               directions: response,
-              routeIndex: routeIndex, // Controls which route is highlighted
+              routeIndex: routeIndex,
             }}
           />
         )}
       </GoogleMap>
 
-      {/* ETA DISPLAY */}
+      {/* ROUTE DETAILS & ETA */}
       {response && (
-        <div style={{ marginTop: "10px" }}>
-          <h3>Available Routes:</h3>
+        <div style={{ padding: "10px" }}>
+          <h4>Suggested Routes</h4>
           {response.routes.map((route, index) => (
             <div 
-              key={index} 
+              key={index}
               onClick={() => setRouteIndex(index)}
-              style={{ 
-                padding: "10px", 
-                border: "1px solid #ccc", 
-                marginBottom: "5px", 
+              style={{
+                padding: "10px",
+                border: "2px solid",
+                borderColor: routeIndex === index ? "#4285F4" : "#eee",
+                borderRadius: "5px",
+                marginBottom: "8px",
                 cursor: "pointer",
-                backgroundColor: routeIndex === index ? "#e0f7fa" : "white"
+                backgroundColor: routeIndex === index ? "#f0f7ff" : "#fff"
               }}
             >
-              <strong>Route {index + 1}:</strong> {route.summary} <br />
-              <span>Distance: {route.legs[0].distance.text}</span> | 
-              <span style={{ color: "green" }}> ETA: {route.legs[0].duration.text}</span>
+              <div style={{ fontWeight: "bold" }}>Route {index + 1}: {route.summary}</div>
+              <div style={{ color: "#555" }}>
+                {route.legs[0].distance.text} — <span style={{ color: "#1a73e8" }}>{route.legs[0].duration.text} ETA</span>
+              </div>
             </div>
           ))}
         </div>
